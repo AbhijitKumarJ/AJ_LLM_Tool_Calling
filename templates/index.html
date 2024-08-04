@@ -13,29 +13,34 @@
             margin: 0;
             padding: 0;
             display: flex;
-            justify-content: center;
-            align-items: center;
             height: 100vh;
         }
         .chat-container {
-            width: 90%;
-            max-width: 800px;
-            height: 90vh;
+            width: 60%;
             background-color: #2a2a2a;
-            border-radius: 8px;
+            border-radius: 8px 0 0 8px;
             overflow: hidden;
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
             display: flex;
             flex-direction: column;
         }
-        .chat-header {
+        .correction-container {
+            width: 40%;
+            background-color: #2a2a2a;
+            border-radius: 0 8px 8px 0;
+            overflow: hidden;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-header, .correction-header {
             background-color: #3a3a3a;
             color: #ffffff;
             padding: 10px;
             text-align: center;
             font-size: 1.2em;
         }
-        .chat-messages {
+        .chat-messages, .correction-content {
             flex-grow: 1;
             overflow-y: auto;
             padding: 10px;
@@ -58,7 +63,7 @@
             padding: 10px;
             background-color: #3a3a3a;
         }
-        .chat-input textarea {
+        .chat-input textarea, #correctionText {
             flex-grow: 1;
             padding: 8px;
             border: none;
@@ -69,7 +74,7 @@
             min-height: 50px;
             max-height: 150px;
         }
-        .chat-input button {
+        .chat-input button, #applyCorrection {
             padding: 8px 15px;
             margin-left: 10px;
             border: none;
@@ -79,17 +84,22 @@
             cursor: pointer;
             align-self: flex-end;
         }
-        .chat-input button:hover {
+        .chat-input button:hover, #applyCorrection:hover {
             background-color: #6a6a6a;
         }
-        .confirmation-box {
-            background-color: #3a3a3a;
-            padding: 10px;
-            margin-top: 10px;
-            border-radius: 4px;
+        .error-message {
+            color: #ff6b6b;
+            font-style: italic;
         }
-        .confirmation-box button {
-            margin-right: 10px;
+        .debug-info {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 5px;
+        }
+        #correctionText {
+            width: 100%;
+            height: 300px;
+            margin-bottom: 10px;
         }
     </style>
 </head>
@@ -104,24 +114,18 @@
             <button id="sendButton">Send</button>
         </div>
     </div>
+    <div class="correction-container">
+        <div class="correction-header">Response Correction</div>
+        <div class="correction-content">
+            <textarea id="correctionText" placeholder="JSON response will appear here for correction"></textarea>
+            <button id="applyCorrection">Apply Correction</button>
+        </div>
+    </div>
 
     <script>
-        var GROQ_API_KEY = "{{ api_key }}";
-        // function sendMessage() {
-        //     const userInput = document.getElementById('userInput');
-        //     const chatMessages = document.getElementById('chatMessages');
+        // Replace with your actual Groq API key
+        const GROQ_API_KEY = '{{api_key}}';
 
-        //     if (userInput.value.trim() === '') return;
-
-        //     // Add user message to chat
-        //     addMessage(userInput.value, 'user-message');
-
-        //     // Clear input field
-        //     userInput.value = '';
-
-        //     // Simulate API call and response handling
-        //     simulateGroqResponse(chatMessages);
-        // }
         $(document).ready(function() {
             $('#sendButton').click(sendMessage);
             $('#userInput').keydown(function(e) {
@@ -130,6 +134,7 @@
                     sendMessage();
                 }
             });
+            $('#applyCorrection').click(applyCorrection);
         });
 
         function sendMessage() {
@@ -145,48 +150,10 @@
         }
 
         function addMessage(content, className) {
-            const chatMessages = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${className}`;
-            messageDiv.textContent = content;
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            $('#chatMessages').append(
+                $('<div>').addClass(`message ${className}`).text(content)
+            ).scrollTop($('#chatMessages')[0].scrollHeight);
         }
-
-        function simulateGroqResponse(chatMessages) {
-            // Simulating different response types
-            const responseTypes = ['normal', 'additional-info', 'confirmation'];
-            const randomType = responseTypes[Math.floor(Math.random() * responseTypes.length)];
-
-            setTimeout(() => {
-                switch(randomType) {
-                    case 'normal':
-                        addMessage("This is a normal response from the Groq API.", 'bot-message');
-                        break;
-                    case 'additional-info':
-                        addMessage("I need some additional information. What's your preferred programming language?", 'bot-message');
-                        break;
-                    case 'confirmation':
-                        const confirmationBox = document.createElement('div');
-                        confirmationBox.className = 'message bot-message confirmation-box';
-                        confirmationBox.innerHTML = `
-                            Do you want to proceed with this action?
-                            <button onclick="handleConfirmation(true)">Yes</button>
-                            <button onclick="handleConfirmation(false)">No</button>
-                        `;
-                        chatMessages.appendChild(confirmationBox);
-                        break;
-                }
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            }, 1000);
-        }
-
-        function handleConfirmation(confirmed) {
-            const response = confirmed ? "You confirmed the action." : "You declined the action.";
-            addMessage(response, 'bot-message');
-        }
-
-
 
         function callGroqAPI(userMessage) {
             $.ajax({
@@ -224,30 +191,37 @@
                     console.error('Error calling Groq API:', textStatus, errorThrown);
                     addMessage(`Error: ${textStatus}`, 'bot-message error-message');
                     if (jqXHR.responseText) {
-                        addMessage(`Debug Info: ${jqXHR.responseText}`, 'debug-info');
+                        const errorResponse = JSON.parse(jqXHR.responseText);
+                        if (errorResponse.error && errorResponse.error.failed_generation) {
+                            $('#correctionText').val(errorResponse.error.failed_generation);
+                        } else {
+                            $('#correctionText').val(jqXHR.responseText);
+                        }
                     }
                 }
             });
         }
 
-
-
         function handleGroqResponse(response) {
-            console.log(response)
             if (response.choices && response.choices.length > 0) {
-                const content = JSON.parse(response.choices[0].message.content);
-                
-                // Assuming the JSON response has a 'response' field
-                if (content) {
-                    addMessage(content, 'bot-message');
-                } else {
-                    addMessage('Received a response, but it was not in the expected format.', 'bot-message error-message');
-                }
+                const content = response.choices[0].message.content;
+                addMessage(content, 'bot-message');
+                $('#correctionText').val(content);
             } else {
                 addMessage('Received an empty response from the API.', 'bot-message error-message');
             }
         }
 
+        function applyCorrection() {
+            const correctedText = $('#correctionText').val();
+            try {
+                const correctedJson = JSON.parse(correctedText);
+                addMessage('Correction applied successfully', 'bot-message');
+                handleGroqResponse({ choices: [{ message: { content: JSON.stringify(correctedJson, null, 2) } }] });
+            } catch (error) {
+                addMessage(`Error in JSON correction: ${error.message}`, 'bot-message error-message');
+            }
+        }
     </script>
 </body>
 </html>
