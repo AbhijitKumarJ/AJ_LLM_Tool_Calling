@@ -125,6 +125,8 @@
     <script>
         // Replace with your actual Groq API key
         const GROQ_API_KEY = '{{api_key}}';
+        const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
 
         $(document).ready(function() {
             $('#sendButton').click(sendMessage);
@@ -146,7 +148,7 @@
             addMessage(userMessage, 'user-message');
             userInput.val('');
 
-            callGroqAPI(userMessage);
+            callGroqAPIForTool(userMessage);
         }
 
         function addMessage(content, className) {
@@ -157,7 +159,7 @@
 
         function callGroqAPI(userMessage) {
             $.ajax({
-                url: 'https://api.groq.com/openai/v1/chat/completions',
+                url: GROQ_API_URL,
                 type: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -221,6 +223,98 @@
             } catch (error) {
                 addMessage(`Error in JSON correction: ${error.message}`, 'bot-message error-message');
             }
+        }
+
+
+        function callGroqAPIForTool(userMessage) {
+            const messages = [
+                { role: "system", content: "You are an AI assistant capable of using tools. When a user asks a question that requires external data or computation, use the appropriate tool by outputting a JSON object with the following structure: {\"tool\": \"tool_name\", \"input\": \"tool_input\"}. Available tools are: 'weather' and 'calculator'." },
+                { role: "user", content: userMessage }
+            ];
+
+            $.ajax({
+                url: GROQ_API_URL,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${GROQ_API_KEY}`
+                },
+                data: JSON.stringify({
+                    model: 'llama-3.1-8b-instant',
+                    temperature: 0.5,
+                    max_tokens: 1024,
+                    top_p: 1,
+                    stream: false,
+                    response_format: {
+                        type: "json_object"
+                    },
+                    messages: messages
+                }),
+                success: function(response) {
+                    handleGroqResponseForTool(response);
+                },
+                error: function(jqXHR, textStatus, errorThrown) {
+                    addMessage(`Error: ${textStatus}`, 'system-message');
+                    console.error('Error calling Groq API:', jqXHR.responseText);
+                }
+            });
+        }
+
+        function handleGroqResponseForTool(response) {
+            if (response.choices && response.choices.length > 0) {
+                const content = response.choices[0].message.content;
+                addMessage('System: ' + content, 'system-message');
+
+                // Check if the response contains a tool call
+                try {
+                    const toolCall = JSON.parse(content);
+                    if (toolCall.tool && toolCall.input) {
+                        executeTool(toolCall.tool, toolCall.input);
+                    }
+                } catch (e) {
+                    // Not a JSON object, so no tool call
+                }
+            } else {
+                addMessage('System: Received an empty response from the API.', 'system-message');
+            }
+        }
+
+        function executeTool(tool, input) {
+            switch(tool) {
+                case 'weather':
+                    simulateWeatherTool(input);
+                    break;
+                case 'calculator':
+                    simulateCalculatorTool(input);
+                    break;
+                default:
+                    addMessage(`System: Unknown tool "${tool}"`, 'system-message');
+            }
+        }
+
+        function simulateWeatherTool(input) {
+            addMessage('Weather Tool: Fetching weather data...', 'tool-message');
+            setTimeout(() => {
+                const weather = ['sunny', 'rainy', 'cloudy'][Math.floor(Math.random() * 3)];
+                const toolResponse = `The weather in ${input} is ${weather}.`;
+                addMessage('Weather Tool: ' + toolResponse, 'tool-message');
+                callGroqAPIForTool('The weather tool returned: "' + toolResponse + '". Please provide a human-friendly response based on this information.');
+            }, 1000);
+        }
+
+        function simulateCalculatorTool(input) {
+            addMessage('Calculator Tool: Performing calculation...', 'tool-message');
+            setTimeout(() => {
+                try {
+                    const result = eval(input); // Note: eval is used for simplicity here. In a real application, use a safer method to evaluate mathematical expressions.
+                    const toolResponse = `The result of ${input} is ${result}.`;
+                    addMessage('Calculator Tool: ' + toolResponse, 'tool-message');
+                    callGroqAPI('The calculator tool returned: "' + toolResponse + '". Please provide a human-friendly response based on this calculation.');
+                } catch (e) {
+                    addMessage('Calculator Tool: Error in calculation.', 'tool-message');
+                    callGroqAPI('The calculator tool encountered an error. Please inform the user and ask if they want to try a different calculation.');
+                }
+            }, 1000);
         }
     </script>
 </body>
