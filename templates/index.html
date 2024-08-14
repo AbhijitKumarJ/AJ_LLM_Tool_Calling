@@ -5,103 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Groq Chatbot</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #1a1a1a;
-            color: #ffffff;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            height: 100vh;
-        }
-        .chat-container {
-            width: 60%;
-            background-color: #2a2a2a;
-            border-radius: 8px 0 0 8px;
-            overflow: hidden;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            display: flex;
-            flex-direction: column;
-        }
-        .correction-container {
-            width: 40%;
-            background-color: #2a2a2a;
-            border-radius: 0 8px 8px 0;
-            overflow: hidden;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            display: flex;
-            flex-direction: column;
-        }
-        .chat-header, .correction-header {
-            background-color: #3a3a3a;
-            color: #ffffff;
-            padding: 10px;
-            text-align: center;
-            font-size: 1.2em;
-        }
-        .chat-messages, .correction-content {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        .message {
-            margin-bottom: 10px;
-            padding: 8px;
-            border-radius: 4px;
-            max-width: 80%;
-        }
-        .user-message {
-            background-color: #4a4a4a;
-            margin-left: auto;
-        }
-        .bot-message {
-            background-color: #3a3a3a;
-        }
-        .chat-input {
-            display: flex;
-            padding: 10px;
-            background-color: #3a3a3a;
-        }
-        .chat-input textarea, #correctionText {
-            flex-grow: 1;
-            padding: 8px;
-            border: none;
-            border-radius: 4px;
-            background-color: #4a4a4a;
-            color: #ffffff;
-            resize: vertical;
-            min-height: 50px;
-            max-height: 150px;
-        }
-        .chat-input button, #applyCorrection {
-            padding: 8px 15px;
-            margin-left: 10px;
-            border: none;
-            border-radius: 4px;
-            background-color: #5a5a5a;
-            color: #ffffff;
-            cursor: pointer;
-            align-self: flex-end;
-        }
-        .chat-input button:hover, #applyCorrection:hover {
-            background-color: #6a6a6a;
-        }
-        .error-message {
-            color: #ff6b6b;
-            font-style: italic;
-        }
-        .debug-info {
-            font-size: 0.8em;
-            color: #999;
-            margin-top: 5px;
-        }
-        #correctionText {
-            width: 100%;
-            height: 300px;
-            margin-bottom: 10px;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/styles.css" />   
 </head>
 <body>
     <div class="chat-container">
@@ -120,202 +24,28 @@
             <textarea id="correctionText" placeholder="JSON response will appear here for correction"></textarea>
             <button id="applyCorrection">Apply Correction</button>
         </div>
+        <div class="chat-header">Selected Tasks</div>
+        <div class="chat-messages" id="divSelectedTasks">
+            <!-- Messages will be dynamically added here -->
+        </div>
     </div>
 
     <script>
+
+
+        window.AJ_Util={
         // Replace with your actual Groq API key
-        const GROQ_API_KEY = '{{api_key}}';
-        const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+            GROQ_API_KEY : '{{api_key}}',
+            GROQ_API_URL : 'https://api.groq.com/openai/v1/chat/completions',
+            UI:{},
+            API:{},
+            Tool:{},
+            Context:[]
+        };
 
-
-        $(document).ready(function() {
-            $('#sendButton').click(sendMessage);
-            $('#userInput').keydown(function(e) {
-                if (e.ctrlKey && e.keyCode == 13) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-            $('#applyCorrection').click(applyCorrection);
-        });
-
-        function sendMessage() {
-            const userInput = $('#userInput');
-            const userMessage = userInput.val().trim();
-
-            if (userMessage === '') return;
-
-            addMessage(userMessage, 'user-message');
-            userInput.val('');
-
-            callGroqAPIForTool(userMessage);
-        }
-
-        function addMessage(content, className) {
-            $('#chatMessages').append(
-                $('<div>').addClass(`message ${className}`).text(content)
-            ).scrollTop($('#chatMessages')[0].scrollHeight);
-        }
-
-        function callGroqAPI(userMessage) {
-            $.ajax({
-                url: GROQ_API_URL,
-                type: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${GROQ_API_KEY}`
-                },
-                data: JSON.stringify({
-                    messages: [
-                        {
-                            role: 'system',
-                            content: "You are an expert in understanding user intension and can break it down as one or more tasks with parameters associated with it. Try to respond with the array of task object in json format. Where each task has intent_category, intent_sub_category, intent_label, intent_description, intent_parameters, intent_response, is_tool_usage_required fields. Create one object for each intent and put all intents in an array in json format. Don't generate any extra text other than json. Strict to the format given here."
-                        },
-                        {
-                            role: 'user',
-                            content: userMessage
-                        }
-                    ],
-                    model: 'llama-3.1-8b-instant',
-                    temperature: 0.5,
-                    max_tokens: 1024,
-                    top_p: 1,
-                    stream: false,
-                    response_format: {
-                        type: "json_object"
-                    },
-                    stop: null
-                }),
-                success: function(response) {
-                    handleGroqResponse(response);
-                },
-                error: function(jqXHR, textStatus, errorThrown) {
-                    console.error('Error calling Groq API:', textStatus, errorThrown);
-                    addMessage(`Error: ${textStatus}`, 'bot-message error-message');
-                    if (jqXHR.responseText) {
-                        const errorResponse = JSON.parse(jqXHR.responseText);
-                        if (errorResponse.error && errorResponse.error.failed_generation) {
-                            $('#correctionText').val(errorResponse.error.failed_generation);
-                        } else {
-                            $('#correctionText').val(jqXHR.responseText);
-                        }
-                    }
-                }
-            });
-        }
-
-        function handleGroqResponse(response) {
-            if (response.choices && response.choices.length > 0) {
-                const content = response.choices[0].message.content;
-                addMessage(content, 'bot-message');
-                $('#correctionText').val(content);
-            } else {
-                addMessage('Received an empty response from the API.', 'bot-message error-message');
-            }
-        }
-
-        function applyCorrection() {
-            const correctedText = $('#correctionText').val();
-            try {
-                const correctedJson = JSON.parse(correctedText);
-                addMessage('Correction applied successfully', 'bot-message');
-                handleGroqResponse({ choices: [{ message: { content: JSON.stringify(correctedJson, null, 2) } }] });
-            } catch (error) {
-                addMessage(`Error in JSON correction: ${error.message}`, 'bot-message error-message');
-            }
-        }
-
-
-        function callGroqAPIForTool(userMessage) {
-            const messages = [
-                { role: "system", content: "You are an AI assistant capable of using tools. When a user asks a question that requires external data or computation, use the appropriate tool by outputting a JSON object with the following structure: {\"tool\": \"tool_name\", \"input\": \"tool_input\"}. Available tools are: 'weather' and 'calculator'." },
-                { role: "user", content: userMessage }
-            ];
-
-            $.ajax({
-                url: GROQ_API_URL,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${GROQ_API_KEY}`
-                },
-                data: JSON.stringify({
-                    model: 'llama-3.1-8b-instant',
-                    temperature: 0.5,
-                    max_tokens: 1024,
-                    top_p: 1,
-                    stream: false,
-                    response_format: {
-                        type: "json_object"
-                    },
-                    messages: messages
-                }),
-                success: function(response) {
-                    handleGroqResponseForTool(response);
-                },
-                error: function(jqXHR, textStatus, errorThrown) {
-                    addMessage(`Error: ${textStatus}`, 'system-message');
-                    console.error('Error calling Groq API:', jqXHR.responseText);
-                }
-            });
-        }
-
-        function handleGroqResponseForTool(response) {
-            if (response.choices && response.choices.length > 0) {
-                const content = response.choices[0].message.content;
-                addMessage('System: ' + content, 'system-message');
-
-                // Check if the response contains a tool call
-                try {
-                    const toolCall = JSON.parse(content);
-                    if (toolCall.tool && toolCall.input) {
-                        executeTool(toolCall.tool, toolCall.input);
-                    }
-                } catch (e) {
-                    // Not a JSON object, so no tool call
-                }
-            } else {
-                addMessage('System: Received an empty response from the API.', 'system-message');
-            }
-        }
-
-        function executeTool(tool, input) {
-            switch(tool) {
-                case 'weather':
-                    simulateWeatherTool(input);
-                    break;
-                case 'calculator':
-                    simulateCalculatorTool(input);
-                    break;
-                default:
-                    addMessage(`System: Unknown tool "${tool}"`, 'system-message');
-            }
-        }
-
-        function simulateWeatherTool(input) {
-            addMessage('Weather Tool: Fetching weather data...', 'tool-message');
-            setTimeout(() => {
-                const weather = ['sunny', 'rainy', 'cloudy'][Math.floor(Math.random() * 3)];
-                const toolResponse = `The weather in ${input} is ${weather}.`;
-                addMessage('Weather Tool: ' + toolResponse, 'tool-message');
-                callGroqAPIForTool('The weather tool returned: "' + toolResponse + '". Please provide a human-friendly response based on this information.');
-            }, 1000);
-        }
-
-        function simulateCalculatorTool(input) {
-            addMessage('Calculator Tool: Performing calculation...', 'tool-message');
-            setTimeout(() => {
-                try {
-                    const result = eval(input); // Note: eval is used for simplicity here. In a real application, use a safer method to evaluate mathematical expressions.
-                    const toolResponse = `The result of ${input} is ${result}.`;
-                    addMessage('Calculator Tool: ' + toolResponse, 'tool-message');
-                    callGroqAPI('The calculator tool returned: "' + toolResponse + '". Please provide a human-friendly response based on this calculation.');
-                } catch (e) {
-                    addMessage('Calculator Tool: Error in calculation.', 'tool-message');
-                    callGroqAPI('The calculator tool encountered an error. Please inform the user and ask if they want to try a different calculation.');
-                }
-            }, 1000);
-        }
     </script>
+    <script src="/static/tool.js"></script>
+    <script src="/static/api.js"></script>
+    <script src="/static/script.js"></script>
 </body>
 </html>
